@@ -1,0 +1,91 @@
+import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
+import { buildPrompt } from "@/lib/prompt";
+import { ApiResponse, Grade, Verbosity, SolutionResult } from "@/lib/types";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+const MAX_IMAGE_BYTES = 7 * 1024 * 1024; // Gemini inline limit safety margin
+
+const VALID_GRADES: Grade[] = ["junior", "high", "university", "other"];
+const VALID_VERBOSITIES: Verbosity[] = ["brief", "standard", "detailed"];
+
+function bad(error: string, status = 400): NextResponse<ApiResponse> {
+  return NextResponse.json({ ok: false, error }, { status });
+}
+
+export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return bad("サーバー設定エラー: APIキーが未設定です", 500);
+
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return bad("リクエストの読み取りに失敗しました");
+  }
+
+  const image = formData.get("image");
+  const grade = formData.get("grade") as string | null;
+  const verbosity = formData.get("verbosity") as string | null;
+
+  if (!(image instanceof File)) return bad("画像が含まれていません");
+  if (image.size === 0) return bad("画像が空です");
+  if (image.size > MAX_IMAGE_BYTES) {
+    return bad(`画像サイズが大きすぎます（${(image.size / 1024 / 1024).toFixed(1)}MB / 上限7MB）`);
+  }
+  if (!grade || !VALID_GRADES.includes(grade as Grade)) return bad("学年指定が不正です");
+  if (!verbosity || !VALID_VERBOSITIES.includes(verbosity as Verbosity)) {
+    return bad("詳しさ指定が不正です");
+  }
+
+  let base64: string;
+  let mimeType: string;
+  try {
+    const buf = Buffer.from(await image.arrayBuffer());
+    base64 = buf.toString("base64");
+    mimeType = image.type || "image/jpeg";
+  } catch {
+    return bad("画像の処理に失敗しました", 500);
+  }
+
+  const prompt = buildPrompt(grade as Grade, verbosity as Verbosity);
+  const ai = new GoogleGenAI({ apiKey });
+
+  let rawText: string;
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        { inlineData: { mimeType, data: base64 } },
+        { text: prompt },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+      },
+    });
+    rawText = response.text ?? "";
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "不明なエラー";
+    return bad(`AI呼び出しに失敗しました: ${msg}`, 502);
+  }
+
+  if (!rawText.trim()) return bad("AIから応答が得られませんでした", 502);
+
+  let parsed: SolutionResult;
+  try {
+    const obj = JSON.parse(rawText);
+    parsed = {
+      problemReading: String(obj.problemReading ?? ""),
+      approach: String(obj.approach ?? ""),
+      steps: String(obj.steps ?? ""),
+      answer: String(obj.answer ?? ""),
+    };
+  } catch {
+    return bad("AI応答の解析に失敗しました（JSON形式エラー）", 502);
+  }
+
+  return NextResponse.json({ ok: true, data: parsed });
+}

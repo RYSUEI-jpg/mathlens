@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@google/genai": "^1.50.1",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.4.1",
     "html-to-image": "^1.11.13",
     "katex": "^0.16.45",
     "next": "16.2.4",

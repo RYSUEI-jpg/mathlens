@@ -13,6 +13,8 @@ export interface SolutionResult {
   approach: string;
   steps: string;
   answer: string;
+  /** Optional inline SVG markup for visual aid (geometry, graphs, etc.) */
+  diagram?: string;
 }
 
 export type ApiResponse =

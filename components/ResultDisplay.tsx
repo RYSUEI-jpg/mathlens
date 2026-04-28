@@ -4,6 +4,7 @@ import { forwardRef, useState } from "react";
 import { SolutionResult } from "@/lib/types";
 import { MathRenderer } from "./MathRenderer";
 import { CopyButton } from "./CopyButton";
+import { DiagramRenderer } from "./DiagramRenderer";
 
 interface Props {
   results: SolutionResult[];
@@ -143,6 +144,7 @@ export const ResultDisplay = forwardRef<HTMLDivElement, Props>(
 
         <div className="bg-slate-50 rounded-2xl p-3 space-y-3">
           <Section emoji="📖" title="読み取った問題" body={current.problemReading} />
+          {current.diagram && <DiagramRenderer svg={current.diagram} />}
           <Section emoji="💡" title="考え方" body={current.approach} />
           <Section emoji="✏️" title="解き方" body={current.steps} />
           <Section

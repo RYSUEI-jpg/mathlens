@@ -83,11 +83,13 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     }
     parsed = arr.map((p: unknown) => {
       const o = (p ?? {}) as Record<string, unknown>;
+      const diagram = typeof o.diagram === "string" ? o.diagram.trim() : "";
       return {
         problemReading: String(o.problemReading ?? ""),
         approach: String(o.approach ?? ""),
         steps: String(o.steps ?? ""),
         answer: String(o.answer ?? ""),
+        ...(diagram ? { diagram } : {}),
       };
     });
   } catch {

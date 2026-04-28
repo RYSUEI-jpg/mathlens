@@ -74,15 +74,22 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
 
   if (!rawText.trim()) return bad("AIから応答が得られませんでした", 502);
 
-  let parsed: SolutionResult;
+  let parsed: SolutionResult[];
   try {
     const obj = JSON.parse(rawText);
-    parsed = {
-      problemReading: String(obj.problemReading ?? ""),
-      approach: String(obj.approach ?? ""),
-      steps: String(obj.steps ?? ""),
-      answer: String(obj.answer ?? ""),
-    };
+    const arr = Array.isArray(obj?.problems) ? obj.problems : null;
+    if (!arr || arr.length === 0) {
+      return bad("AI応答が想定外の形式でした", 502);
+    }
+    parsed = arr.map((p: unknown) => {
+      const o = (p ?? {}) as Record<string, unknown>;
+      return {
+        problemReading: String(o.problemReading ?? ""),
+        approach: String(o.approach ?? ""),
+        steps: String(o.steps ?? ""),
+        answer: String(o.answer ?? ""),
+      };
+    });
   } catch {
     return bad("AI応答の解析に失敗しました（JSON形式エラー）", 502);
   }

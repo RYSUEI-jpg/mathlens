@@ -11,11 +11,24 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { ResultDisplay } from "@/components/ResultDisplay";
 import { ConfirmReadModal } from "@/components/ConfirmReadModal";
 import { ShareButton } from "@/components/ShareButton";
+import { UnreadableState } from "@/components/UnreadableState";
 import { ErrorToast } from "@/components/ErrorToast";
-import { ApiResponse, SolutionResult, UserSettings } from "@/lib/types";
+import {
+  ApiResponse,
+  SolutionResult,
+  UNREADABLE_MARKER,
+  UserSettings,
+} from "@/lib/types";
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "@/lib/storage";
 
 type Phase = "input" | "loading" | "confirm" | "result";
+
+function isUnreadable(results: SolutionResult[]): boolean {
+  return (
+    results.length === 1 &&
+    results[0].problemReading.includes(UNREADABLE_MARKER)
+  );
+}
 
 export default function Home() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
@@ -25,8 +38,8 @@ export default function Home() {
   const [phase, setPhase] = useState<Phase>("input");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [pendingResult, setPendingResult] = useState<SolutionResult | null>(null);
-  const [result, setResult] = useState<SolutionResult | null>(null);
+  const [pendingResult, setPendingResult] = useState<SolutionResult[] | null>(null);
+  const [result, setResult] = useState<SolutionResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const resultRef = useRef<HTMLDivElement>(null);
@@ -81,7 +94,8 @@ export default function Home() {
         return;
       }
 
-      if (settings.skipReadConfirm) {
+      // 読み取り失敗の場合は確認モーダルをスキップして専用UIへ
+      if (isUnreadable(json.data) || settings.skipReadConfirm) {
         setResult(json.data);
         setPhase("result");
       } else {
@@ -120,11 +134,14 @@ export default function Home() {
 
   if (!hydrated) return <div className="flex-1" />;
 
+  const showResult = phase === "result" && result !== null;
+  const isResultUnreadable = showResult && result && isUnreadable(result);
+
   return (
     <>
       <Header onOpenSettings={() => setShowProfile(true)} />
 
-      <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 space-y-5">
+      <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 pb-28 space-y-5">
         <SettingsBar settings={settings} onEdit={() => setShowProfile(true)} />
 
         {phase === "input" && !previewUrl && (
@@ -148,26 +165,38 @@ export default function Home() {
 
         {phase === "loading" && (
           <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-            <LoadingSpinner message="AIが問題を解いています..." />
+            <LoadingSpinner />
           </section>
         )}
 
-        {phase === "result" && result && (
-          <>
-            <ResultDisplay ref={resultRef} result={result} />
-            <div className="flex flex-wrap justify-center gap-3 pt-2">
-              <ShareButton targetRef={resultRef} />
-              <button
-                type="button"
-                onClick={handleReset}
-                className="px-5 py-3 rounded-xl bg-white border-2 border-slate-300 text-slate-700 font-medium hover:border-indigo-400 transition"
-              >
-                🔄 別の問題を解く
-              </button>
-            </div>
-          </>
+        {showResult && isResultUnreadable && (
+          <UnreadableState imageSrc={previewUrl} onRetake={handleReset} />
+        )}
+
+        {showResult && !isResultUnreadable && result && (
+          <ResultDisplay
+            ref={resultRef}
+            results={result}
+            imageSrc={previewUrl}
+          />
         )}
       </main>
+
+      {/* 結果表示中の固定下部アクションバー */}
+      {showResult && !isResultUnreadable && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 p-3">
+          <div className="max-w-3xl mx-auto flex flex-wrap justify-center gap-2">
+            <ShareButton targetRef={resultRef} />
+            <button
+              type="button"
+              onClick={handleReset}
+              className="px-5 py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition flex items-center gap-2"
+            >
+              🔄 別の問題を解く
+            </button>
+          </div>
+        </div>
+      )}
 
       {showProfile && (
         <ProfileModal
@@ -180,7 +209,7 @@ export default function Home() {
 
       {phase === "confirm" && pendingResult && (
         <ConfirmReadModal
-          problemReading={pendingResult.problemReading}
+          problems={pendingResult}
           onConfirm={handleConfirmRead}
           onRetake={handleRetake}
         />

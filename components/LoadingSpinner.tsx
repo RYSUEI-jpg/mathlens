@@ -1,13 +1,36 @@
 "use client";
 
-export function LoadingSpinner({ message = "解析中..." }: { message?: string }) {
+import { useEffect, useState } from "react";
+
+const STAGES = [
+  "📷 画像を読み込んでいます...",
+  "🔍 問題を認識しています...",
+  "🧠 解説を考えています...",
+  "✏️ もう少しで完成です...",
+];
+
+export function LoadingSpinner({ message }: { message?: string }) {
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (message) return;
+    const t = setInterval(() => {
+      setIdx((i) => Math.min(i + 1, STAGES.length - 1));
+    }, 2500);
+    return () => clearInterval(t);
+  }, [message]);
+
+  const display = message ?? STAGES[idx];
+
   return (
     <div className="flex flex-col items-center justify-center py-12 space-y-4">
       <div className="relative">
         <div className="w-16 h-16 border-4 border-indigo-200 rounded-full" />
         <div className="absolute top-0 left-0 w-16 h-16 border-4 border-transparent border-t-indigo-600 rounded-full animate-spin" />
       </div>
-      <p className="text-slate-600">{message}</p>
+      <p className="text-slate-600 text-center min-h-[1.5rem] transition-opacity">
+        {display}
+      </p>
     </div>
   );
 }

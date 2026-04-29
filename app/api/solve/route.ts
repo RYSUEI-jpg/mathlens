@@ -53,22 +53,60 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
   const prompt = buildPrompt(grade as Grade, verbosity as Verbosity);
   const ai = new GoogleGenAI({ apiKey });
 
-  let rawText: string;
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        { inlineData: { mimeType, data: base64 } },
-        { text: prompt },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        temperature: 0.2,
-      },
-    });
-    rawText = response.text ?? "";
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "不明なエラー";
+  // 503 (UNAVAILABLE) と 429 (RESOURCE_EXHAUSTED) は一時的な混雑なのでリトライ
+  const RETRYABLE_PATTERNS = [
+    "UNAVAILABLE",
+    "RESOURCE_EXHAUSTED",
+    "DEADLINE_EXCEEDED",
+    "503",
+    "429",
+    "504",
+  ];
+  const MAX_RETRIES = 2;
+  const BACKOFF_MS = [1500, 4000]; // 1.5s, 4s
+
+  let rawText = "";
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [
+          { inlineData: { mimeType, data: base64 } },
+          { text: prompt },
+        ],
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+        },
+      });
+      rawText = response.text ?? "";
+      lastError = null;
+      break;
+    } catch (e) {
+      lastError = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      const isRetryable = RETRYABLE_PATTERNS.some((p) => msg.includes(p));
+      if (!isRetryable || attempt === MAX_RETRIES) break;
+      await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt] ?? 4000));
+    }
+  }
+
+  if (lastError) {
+    const msg = lastError instanceof Error ? lastError.message : "不明なエラー";
+    if (RETRYABLE_PATTERNS.some((p) => msg.includes(p))) {
+      return bad(
+        "AIが現在混雑しています。1〜2分後にもう一度お試しください。",
+        503
+      );
+    }
+    if (msg.includes("PERMISSION_DENIED") || msg.includes("403")) {
+      return bad("AIへのアクセスが拒否されました（管理者にご連絡ください）", 502);
+    }
+    if (msg.includes("INVALID_ARGUMENT") || msg.includes("400")) {
+      return bad("画像をAIが処理できませんでした。別の画像でお試しください。", 400);
+    }
     return bad(`AI呼び出しに失敗しました: ${msg}`, 502);
   }
 

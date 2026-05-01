@@ -1,5 +1,29 @@
 import { Grade, Verbosity, GRADE_LABEL } from "./types";
 
+/**
+ * 読み取りだけを行う軽量プロンプト。
+ * 解説確認モーダルを表示する場合の最初のステップで使用。
+ * 解説生成しないので速く、APIコストも安い。
+ */
+export function buildReadOnlyPrompt(): string {
+  return `画像から数学の問題を読み取って、JSON形式で返してください。
+**解説や答えは不要、読み取りだけ**を行ってください。
+
+# 出力フォーマット
+{
+  "problems": [
+    { "problemReading": "問題の内容（数式は$...$または$$...$$でLaTeX）" }
+  ]
+}
+
+# ルール
+- 画像内の問題が1つでも、配列の要素として返す
+- 複数の問題がある場合は別オブジェクトとして配列に並べる（例: 3問あれば配列の長さ3）
+- 数学の問題が認識できない場合: { "problems": [{ "problemReading": "数学の問題が認識できませんでした" }] }
+- LaTeXのバックスラッシュは \\\\\\\\ とエスケープ
+- approach, steps, answer, diagram などのフィールドは含めないでください`;
+}
+
 const VERBOSITY_INSTRUCTION: Record<Verbosity, string> = {
   brief: "要点だけを簡潔に説明してください。冗長な説明は避けます。",
   standard: "標準的な詳しさで、つまずきやすいポイントには補足を入れてください。",

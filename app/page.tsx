@@ -21,7 +21,7 @@ import {
 } from "@/lib/types";
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "@/lib/storage";
 
-type Phase = "input" | "loading" | "confirm" | "result";
+type Phase = "input" | "reading" | "explaining" | "confirm" | "result";
 
 function isUnreadable(results: SolutionResult[]): boolean {
   return (
@@ -29,6 +29,14 @@ function isUnreadable(results: SolutionResult[]): boolean {
     results[0].problemReading.includes(UNREADABLE_MARKER)
   );
 }
+
+const READING_MESSAGE = "📖 問題を読み取っています...";
+const EXPLAINING_STAGES = [
+  "🧠 解説を考えています...",
+  "✏️ 解法ステップを組み立て中...",
+  "📐 図解を生成中...",
+  "✨ もう少しで完成です...",
+];
 
 export default function Home() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
@@ -38,7 +46,7 @@ export default function Home() {
   const [phase, setPhase] = useState<Phase>("input");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [pendingResult, setPendingResult] = useState<SolutionResult[] | null>(null);
+  const [readingResult, setReadingResult] = useState<SolutionResult[] | null>(null);
   const [result, setResult] = useState<SolutionResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,59 +78,93 @@ export default function Home() {
   function handleReset() {
     setImageFile(null);
     setResult(null);
-    setPendingResult(null);
+    setReadingResult(null);
     setPhase("input");
     setError(null);
   }
 
+  /** API呼び出しのコア。mode指定で読み取り or フル解説を切り替え */
+  async function callSolveApi(
+    file: File,
+    mode: "read" | "full"
+  ): Promise<SolutionResult[]> {
+    const fd = new FormData();
+    fd.append("image", file);
+    fd.append("mode", mode);
+    if (mode === "full") {
+      fd.append("grade", settings.grade);
+      fd.append("verbosity", settings.verbosity);
+    }
+    const res = await fetch("/api/solve", { method: "POST", body: fd });
+    const json: ApiResponse = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    return json.data;
+  }
+
+  /** 「解説してもらう」ボタン押下。skipReadConfirmで2分岐 */
   async function handleSubmit() {
     if (!imageFile) return;
-    setPhase("loading");
     setError(null);
 
-    const fd = new FormData();
-    fd.append("image", imageFile);
-    fd.append("grade", settings.grade);
-    fd.append("verbosity", settings.verbosity);
-
-    try {
-      const res = await fetch("/api/solve", { method: "POST", body: fd });
-      const json: ApiResponse = await res.json();
-      if (!json.ok) {
-        setError(json.error);
+    if (settings.skipReadConfirm) {
+      // 確認スキップ → 一発でフル解説
+      setPhase("explaining");
+      try {
+        const data = await callSolveApi(imageFile, "full");
+        setResult(data);
+        setPhase("result");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "通信エラー";
+        setError(msg);
         setPhase("input");
+      }
+      return;
+    }
+
+    // 確認あり → まず読み取りだけ
+    setPhase("reading");
+    try {
+      const data = await callSolveApi(imageFile, "read");
+      // 読み取り失敗の場合は確認モーダルをスキップしてエラー画面へ
+      if (isUnreadable(data)) {
+        setResult(data);
+        setPhase("result");
         return;
       }
-
-      // 読み取り失敗の場合は確認モーダルをスキップして専用UIへ
-      if (isUnreadable(json.data) || settings.skipReadConfirm) {
-        setResult(json.data);
-        setPhase("result");
-      } else {
-        setPendingResult(json.data);
-        setPhase("confirm");
-      }
+      setReadingResult(data);
+      setPhase("confirm");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "通信エラー";
-      setError(`通信に失敗しました: ${msg}`);
+      setError(msg);
       setPhase("input");
     }
   }
 
-  function handleConfirmRead(skipNext: boolean) {
-    if (!pendingResult) return;
+  /** 確認モーダルで「合ってる」押下 → 解説生成 */
+  async function handleConfirmRead(skipNext: boolean) {
+    if (!imageFile || !readingResult) return;
     if (skipNext && !settings.skipReadConfirm) {
       const next = { ...settings, skipReadConfirm: true };
       setSettings(next);
       saveSettings(next);
     }
-    setResult(pendingResult);
-    setPendingResult(null);
-    setPhase("result");
+    setError(null);
+    setPhase("explaining");
+    try {
+      const data = await callSolveApi(imageFile, "full");
+      setResult(data);
+      setReadingResult(null);
+      setPhase("result");
+    } catch (e) {
+      // 解説生成に失敗したら確認モーダルに戻す（再試行可能）
+      const msg = e instanceof Error ? e.message : "通信エラー";
+      setError(msg);
+      setPhase("confirm");
+    }
   }
 
   function handleRetake() {
-    setPendingResult(null);
+    setReadingResult(null);
     setPhase("input");
   }
 
@@ -136,6 +178,7 @@ export default function Home() {
 
   const showResult = phase === "result" && result !== null;
   const isResultUnreadable = showResult && result && isUnreadable(result);
+  const isLoading = phase === "reading" || phase === "explaining";
 
   return (
     <>
@@ -163,9 +206,13 @@ export default function Home() {
           </section>
         )}
 
-        {phase === "loading" && (
+        {isLoading && (
           <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-            <LoadingSpinner />
+            {phase === "reading" ? (
+              <LoadingSpinner message={READING_MESSAGE} />
+            ) : (
+              <LoadingSpinner stages={EXPLAINING_STAGES} />
+            )}
           </section>
         )}
 
@@ -207,9 +254,9 @@ export default function Home() {
         />
       )}
 
-      {phase === "confirm" && pendingResult && (
+      {phase === "confirm" && readingResult && (
         <ConfirmReadModal
-          problems={pendingResult}
+          problems={readingResult}
           onConfirm={handleConfirmRead}
           onRetake={handleRetake}
         />

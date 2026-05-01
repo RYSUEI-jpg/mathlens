@@ -2,25 +2,34 @@
 
 import { useEffect, useState } from "react";
 
-const STAGES = [
+const DEFAULT_STAGES = [
   "📷 画像を読み込んでいます...",
   "🔍 問題を認識しています...",
   "🧠 解説を考えています...",
   "✏️ もう少しで完成です...",
 ];
 
-export function LoadingSpinner({ message }: { message?: string }) {
+interface Props {
+  /** 固定メッセージ。指定するとstages循環せずこれだけ表示 */
+  message?: string;
+  /** 一定間隔で順送りされるステージメッセージ */
+  stages?: string[];
+}
+
+export function LoadingSpinner({ message, stages }: Props) {
   const [idx, setIdx] = useState(0);
+  const list = stages ?? DEFAULT_STAGES;
 
   useEffect(() => {
     if (message) return;
+    setIdx(0);
     const t = setInterval(() => {
-      setIdx((i) => Math.min(i + 1, STAGES.length - 1));
+      setIdx((i) => Math.min(i + 1, list.length - 1));
     }, 2500);
     return () => clearInterval(t);
-  }, [message]);
+  }, [message, list]);
 
-  const display = message ?? STAGES[idx];
+  const display = message ?? list[idx];
 
   return (
     <div className="flex flex-col items-center justify-center py-12 space-y-4">

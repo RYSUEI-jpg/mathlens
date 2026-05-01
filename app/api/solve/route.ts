@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { buildPrompt } from "@/lib/prompt";
+import { buildPrompt, buildReadOnlyPrompt } from "@/lib/prompt";
 import { ApiResponse, Grade, Verbosity, SolutionResult } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -29,15 +29,20 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
   const image = formData.get("image");
   const grade = formData.get("grade") as string | null;
   const verbosity = formData.get("verbosity") as string | null;
+  const mode = formData.get("mode") as string | null; // "read" or "full" (default)
+  const isReadOnly = mode === "read";
 
   if (!(image instanceof File)) return bad("画像が含まれていません");
   if (image.size === 0) return bad("画像が空です");
   if (image.size > MAX_IMAGE_BYTES) {
     return bad(`画像サイズが大きすぎます（${(image.size / 1024 / 1024).toFixed(1)}MB / 上限7MB）`);
   }
-  if (!grade || !VALID_GRADES.includes(grade as Grade)) return bad("学年指定が不正です");
-  if (!verbosity || !VALID_VERBOSITIES.includes(verbosity as Verbosity)) {
-    return bad("詳しさ指定が不正です");
+  // mode=read のときは grade/verbosity 不要
+  if (!isReadOnly) {
+    if (!grade || !VALID_GRADES.includes(grade as Grade)) return bad("学年指定が不正です");
+    if (!verbosity || !VALID_VERBOSITIES.includes(verbosity as Verbosity)) {
+      return bad("詳しさ指定が不正です");
+    }
   }
 
   let base64: string;
@@ -50,7 +55,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     return bad("画像の処理に失敗しました", 500);
   }
 
-  const prompt = buildPrompt(grade as Grade, verbosity as Verbosity);
+  const prompt = isReadOnly
+    ? buildReadOnlyPrompt()
+    : buildPrompt(grade as Grade, verbosity as Verbosity);
   const ai = new GoogleGenAI({ apiKey });
 
   // 503 (UNAVAILABLE) と 429 (RESOURCE_EXHAUSTED) は一時的な混雑なのでリトライ

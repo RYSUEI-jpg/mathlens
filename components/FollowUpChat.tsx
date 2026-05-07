@@ -1,24 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChatMessage } from "@/lib/types";
 import { MathRenderer } from "./MathRenderer";
 
 interface Props {
   messages: ChatMessage[];
-  onSend: (question: string) => Promise<string>;
+  onSend: (
+    question: string,
+    onChunk?: (accumulated: string) => void
+  ) => Promise<string>;
 }
 
 export function FollowUpChat({ messages, onSend }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [streaming, setStreaming] = useState("");
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>(messages);
+  const lastMsgRef = useRef<HTMLDivElement>(null);
   const trimmed = text.trim();
 
   // page側のmessagesと同期
   if (messages !== localMessages && messages.length !== localMessages.length) {
     setLocalMessages(messages);
   }
+
+  // 新メッセージ・ストリーミング更新で末尾にスクロール
+  useEffect(() => {
+    lastMsgRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [localMessages.length, streaming]);
 
   async function handleSend() {
     if (!trimmed || busy) return;
@@ -30,8 +40,11 @@ export function FollowUpChat({ messages, onSend }: Props) {
     setLocalMessages((prev) => [...prev, userMsg]);
     setText("");
     setBusy(true);
+    setStreaming("");
     try {
-      const answer = await onSend(trimmed);
+      const answer = await onSend(trimmed, (accumulated) =>
+        setStreaming(accumulated)
+      );
       const finalAnswer = answer.trim()
         ? answer
         : "（応答が空でした。もう一度お試しください）";
@@ -52,6 +65,7 @@ export function FollowUpChat({ messages, onSend }: Props) {
       ]);
     } finally {
       setBusy(false);
+      setStreaming("");
     }
   }
 
@@ -73,15 +87,13 @@ export function FollowUpChat({ messages, onSend }: Props) {
         </p>
       </div>
 
-      {localMessages.length > 0 && (
+      {(localMessages.length > 0 || busy) && (
         <div className="px-4 py-3 space-y-3 max-h-96 overflow-y-auto">
           {localMessages.map((m, i) => (
             <div
               key={i}
               className={`rounded-xl p-3 ${
-                m.role === "user"
-                  ? "bg-indigo-50 ml-6"
-                  : "bg-slate-50 mr-6"
+                m.role === "user" ? "bg-indigo-50 ml-6" : "bg-slate-50 mr-6"
               }`}
             >
               <div className="text-[10px] font-bold text-slate-500 mb-1">
@@ -96,9 +108,23 @@ export function FollowUpChat({ messages, onSend }: Props) {
               )}
             </div>
           ))}
+
+          {/* ストリーミング中のバブル */}
           {busy && (
-            <div className="bg-slate-50 mr-6 rounded-xl p-3 text-sm text-slate-500 animate-pulse">
-              🤖 考え中...
+            <div ref={lastMsgRef} className="bg-slate-50 mr-6 rounded-xl p-3">
+              <div className="text-[10px] font-bold text-slate-500 mb-1">🤖 AI</div>
+              {streaming ? (
+                <div className="text-sm text-slate-800 whitespace-pre-wrap break-words leading-relaxed">
+                  {streaming}
+                  <span className="inline-block w-1.5 h-4 bg-indigo-500 animate-pulse align-middle ml-0.5 rounded-sm" />
+                </div>
+              ) : (
+                <div className="flex gap-1 text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -121,7 +147,7 @@ export function FollowUpChat({ messages, onSend }: Props) {
             disabled={!trimmed || busy}
             className="min-h-10 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium active:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
-            {busy ? "送信中..." : "送信 ↑"}
+            {busy ? "応答中..." : "送信 ↑"}
           </button>
         </div>
       </div>

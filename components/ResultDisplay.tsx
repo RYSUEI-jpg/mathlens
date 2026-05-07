@@ -12,7 +12,10 @@ interface Props {
   results: SolutionResult[];
   imageSrc?: string | null;
   followUps?: ChatMessage[];
-  onFollowUp?: (question: string) => Promise<string>;
+  onFollowUp?: (
+    question: string,
+    onChunk?: (accumulated: string) => void
+  ) => Promise<string>;
   onFeedback?: (value: FeedbackValue) => void;
   currentFeedback?: FeedbackValue;
 }

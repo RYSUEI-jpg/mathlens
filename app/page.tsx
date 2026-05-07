@@ -117,12 +117,11 @@ export default function Home() {
     if (next === "text") setImageFile(null);
   }
 
-  /** APIコール共通処理 */
+  /** /api/solve 呼び出し（image / text モード） */
   async function callSolveApi(
     payload:
       | { kind: "image"; file: File; mode: "read" | "full" }
       | { kind: "text"; question: string }
-      | { kind: "followup"; question: string; context: SolutionResult[]; history: { role: string; content: string }[] }
   ): Promise<SolutionResult[]> {
     const fd = new FormData();
     if (payload.kind === "image") {
@@ -132,22 +131,49 @@ export default function Home() {
         fd.append("grade", settings.grade);
         fd.append("verbosity", settings.verbosity);
       }
-    } else if (payload.kind === "text") {
-      fd.append("question", payload.question);
-      fd.append("grade", settings.grade);
-      fd.append("verbosity", settings.verbosity);
     } else {
       fd.append("question", payload.question);
-      fd.append("mode", "followup");
       fd.append("grade", settings.grade);
       fd.append("verbosity", settings.verbosity);
-      fd.append("context", JSON.stringify(payload.context));
-      fd.append("history", JSON.stringify(payload.history));
     }
     const res = await fetch("/api/solve", { method: "POST", body: fd });
     const json: ApiResponse = await res.json();
     if (!json.ok) throw new Error(json.error);
     return json.data;
+  }
+
+  /** /api/followup ストリーミング呼び出し */
+  async function callFollowUpStream(
+    question: string,
+    context: SolutionResult[],
+    history: { role: string; content: string }[],
+    onChunk: (accumulated: string) => void
+  ): Promise<string> {
+    const fd = new FormData();
+    fd.append("question", question);
+    fd.append("grade", settings.grade);
+    fd.append("verbosity", settings.verbosity);
+    fd.append("context", JSON.stringify(context));
+    fd.append("history", JSON.stringify(history));
+    const res = await fetch("/api/followup", { method: "POST", body: fd });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(errText || `HTTP ${res.status}`);
+    }
+    if (!res.body) throw new Error("ストリーム本文が空です");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      accumulated += decoder.decode(value, { stream: true });
+      onChunk(accumulated);
+    }
+    accumulated += decoder.decode();
+    onChunk(accumulated);
+    return accumulated;
   }
 
   /** 履歴に保存 */
@@ -263,24 +289,22 @@ export default function Home() {
     setPhase("result");
   }
 
-  /** 追加質問送信 */
-  async function handleFollowUp(question: string): Promise<string> {
+  /** 追加質問送信（ストリーミング対応） */
+  async function handleFollowUp(
+    question: string,
+    onChunk?: (accumulated: string) => void
+  ): Promise<string> {
     if (!result) throw new Error("解説が表示されていません");
     const history = (activeEntry?.followUps ?? []).map((m) => ({
       role: m.role,
       content: m.content,
     }));
-    const data = await callSolveApi({
-      kind: "followup",
+    const answer = await callFollowUpStream(
       question,
-      context: result,
+      result,
       history,
-    });
-    // followupは形式が緩いので、いずれかの非空フィールドを採用
-    const first = data[0];
-    const answer =
-      [first?.problemReading, first?.approach, first?.steps, first?.answer]
-        .find((s) => s && s.trim().length > 0) ?? "";
+      (accumulated) => onChunk?.(accumulated)
+    );
     if (activeEntry) {
       const userMsg = { role: "user" as const, content: question, timestamp: Date.now() };
       const assistantMsg = { role: "assistant" as const, content: answer, timestamp: Date.now() };

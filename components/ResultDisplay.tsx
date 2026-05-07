@@ -1,14 +1,20 @@
 "use client";
 
 import { forwardRef, useState } from "react";
-import { SolutionResult } from "@/lib/types";
+import { ChatMessage, FeedbackValue, SolutionResult } from "@/lib/types";
 import { MathRenderer } from "./MathRenderer";
 import { CopyButton } from "./CopyButton";
 import { DiagramRenderer } from "./DiagramRenderer";
+import { FeedbackButtons } from "./FeedbackButtons";
+import { FollowUpChat } from "./FollowUpChat";
 
 interface Props {
   results: SolutionResult[];
   imageSrc?: string | null;
+  followUps?: ChatMessage[];
+  onFollowUp?: (question: string) => Promise<string>;
+  onFeedback?: (value: FeedbackValue) => void;
+  currentFeedback?: FeedbackValue;
 }
 
 interface SectionProps {
@@ -46,7 +52,7 @@ function PhotoThumbnail({ src }: { src: string }) {
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className="block w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-50 hover:border-indigo-300 transition text-left"
+        className="block w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-50 active:border-indigo-300 transition text-left"
         aria-label="撮影した画像を拡大表示"
       >
         <div className="flex items-center gap-3 p-3">
@@ -130,7 +136,10 @@ function PaginationBar({
 }
 
 export const ResultDisplay = forwardRef<HTMLDivElement, Props>(
-  function ResultDisplay({ results, imageSrc }, ref) {
+  function ResultDisplay(
+    { results, imageSrc, followUps, onFollowUp, onFeedback, currentFeedback },
+    ref
+  ) {
     const [index, setIndex] = useState(0);
     const total = results.length;
     const current = results[Math.min(index, total - 1)];
@@ -161,6 +170,14 @@ export const ResultDisplay = forwardRef<HTMLDivElement, Props>(
             copyText={current.answer}
           />
         </div>
+
+        {onFeedback && (
+          <FeedbackButtons current={currentFeedback} onSelect={onFeedback} />
+        )}
+
+        {onFollowUp && (
+          <FollowUpChat messages={followUps ?? []} onSend={onFollowUp} />
+        )}
       </div>
     );
   }

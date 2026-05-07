@@ -31,6 +31,54 @@ const VERBOSITY_INSTRUCTION: Record<Verbosity, string> = {
 };
 
 /**
+ * 追加質問（フォローアップ）用プロンプト。
+ * 既存の解説内容と過去の会話履歴を踏まえて、新しい質問に答える。
+ * 短い回答を意図し、JSON配列に1要素だけ返す。
+ */
+export function buildFollowUpPrompt(
+  context: string,
+  history: Array<{ role: string; content: string }>,
+  question: string,
+  grade: Grade,
+  verbosity: Verbosity
+): string {
+  const historyBlock = history
+    .map((m) => `${m.role === "user" ? "ユーザー" : "AI"}: ${m.content}`)
+    .join("\n");
+  return `あなたは数学の家庭教師です。先ほど以下の解説をしました:
+
+# 元の解説
+"""
+${context}
+"""
+
+${historyBlock ? `# 過去の追加質問\n"""\n${historyBlock}\n"""\n\n` : ""}# ユーザーからの追加質問
+"""
+${question}
+"""
+
+${GRADE_LABEL[grade]}向けに、上記の追加質問に答えてください。${VERBOSITY_INSTRUCTION[verbosity]}
+
+# 出力フォーマット
+必ず以下のJSON構造のみで回答してください（プレーンテキストやコードブロックは禁止）:
+
+{
+  "problems": [
+    {
+      "problemReading": "（追加質問への答え）",
+      "approach": "",
+      "steps": "",
+      "answer": ""
+    }
+  ]
+}
+
+- 答えは "problemReading" フィールドにすべて入れてください（マークダウン可、数式はLaTeX）
+- LaTeXのバックスラッシュは \\\\\\\\ とエスケープ
+- 短く・端的に答える（追加質問なので長文不要）`;
+}
+
+/**
  * テキスト入力用プロンプト。
  * 問題解決型「x²-5x+6=0を解いて」と概念説明型「微分について教えて」の両方に対応。
  */

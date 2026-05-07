@@ -15,13 +15,17 @@ import { ConfirmReadModal } from "@/components/ConfirmReadModal";
 import { ShareButton } from "@/components/ShareButton";
 import { UnreadableState } from "@/components/UnreadableState";
 import { ErrorToast } from "@/components/ErrorToast";
+import { HistoryDrawer } from "@/components/HistoryDrawer";
 import {
   ApiResponse,
+  HistoryEntry,
   SolutionResult,
   UNREADABLE_MARKER,
   UserSettings,
 } from "@/lib/types";
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "@/lib/storage";
+import { addEntry, appendFollowUp, setFeedback as saveFeedback } from "@/lib/history";
+import { makeThumbnail, resizeImage } from "@/lib/image";
 
 type Phase = "input" | "reading" | "explaining" | "confirm" | "result";
 
@@ -53,10 +57,14 @@ export default function Home() {
   const [inputMode, setInputMode] = useState<InputMode>("image");
   const [phase, setPhase] = useState<Phase>("input");
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [submitFile, setSubmitFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [readingResult, setReadingResult] = useState<SolutionResult[] | null>(null);
   const [result, setResult] = useState<SolutionResult[] | null>(null);
+  const [activeEntry, setActiveEntry] = useState<HistoryEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   const resultRef = useRef<HTMLDivElement>(null);
 
@@ -70,11 +78,20 @@ export default function Home() {
   useEffect(() => {
     if (!imageFile) {
       setPreviewUrl(null);
+      setSubmitFile(null);
       return;
     }
     const url = URL.createObjectURL(imageFile);
     setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
+    // 並行して送信用にリサイズ（コスト・速度UP）
+    let cancelled = false;
+    resizeImage(imageFile).then((resized) => {
+      if (!cancelled) setSubmitFile(resized);
+    });
+    return () => {
+      cancelled = true;
+      URL.revokeObjectURL(url);
+    };
   }, [imageFile]);
 
   function handleSaveSettings(next: UserSettings) {
@@ -85,8 +102,10 @@ export default function Home() {
 
   function handleReset() {
     setImageFile(null);
+    setSubmitFile(null);
     setResult(null);
     setReadingResult(null);
+    setActiveEntry(null);
     setPhase("input");
     setError(null);
   }
@@ -94,15 +113,15 @@ export default function Home() {
   function handleModeChange(next: InputMode) {
     if (next === inputMode) return;
     setInputMode(next);
-    // モード切り替え時は入力中の画像をクリア（混乱防止）
     if (next === "text") setImageFile(null);
   }
 
-  /** APIコール共通処理。imageFileかquestionどちらかを送る */
+  /** APIコール共通処理 */
   async function callSolveApi(
     payload:
       | { kind: "image"; file: File; mode: "read" | "full" }
       | { kind: "text"; question: string }
+      | { kind: "followup"; question: string; context: SolutionResult[]; history: { role: string; content: string }[] }
   ): Promise<SolutionResult[]> {
     const fd = new FormData();
     if (payload.kind === "image") {
@@ -112,10 +131,17 @@ export default function Home() {
         fd.append("grade", settings.grade);
         fd.append("verbosity", settings.verbosity);
       }
-    } else {
+    } else if (payload.kind === "text") {
       fd.append("question", payload.question);
       fd.append("grade", settings.grade);
       fd.append("verbosity", settings.verbosity);
+    } else {
+      fd.append("question", payload.question);
+      fd.append("mode", "followup");
+      fd.append("grade", settings.grade);
+      fd.append("verbosity", settings.verbosity);
+      fd.append("context", JSON.stringify(payload.context));
+      fd.append("history", JSON.stringify(payload.history));
     }
     const res = await fetch("/api/solve", { method: "POST", body: fd });
     const json: ApiResponse = await res.json();
@@ -123,16 +149,39 @@ export default function Home() {
     return json.data;
   }
 
-  /** 画像モード: 「解説してもらう」ボタン */
+  /** 履歴に保存 */
+  async function persistResult(
+    data: SolutionResult[],
+    inputKind: "image" | "text",
+    question?: string,
+    sourceFile?: File | null
+  ) {
+    if (isUnreadable(data)) return;
+    const thumbnail = sourceFile ? await makeThumbnail(sourceFile) : undefined;
+    const entry = addEntry({
+      inputKind,
+      problems: data,
+      grade: settings.grade,
+      verbosity: settings.verbosity,
+      ...(question ? { question } : {}),
+      ...(thumbnail ? { thumbnail } : {}),
+    });
+    setActiveEntry(entry);
+    setHistoryRefreshKey((k) => k + 1);
+  }
+
+  /** 画像モード送信 */
   async function handleImageSubmit() {
-    if (!imageFile) return;
+    const fileToSend = submitFile ?? imageFile;
+    if (!fileToSend) return;
     setError(null);
 
     if (settings.skipReadConfirm) {
       setPhase("explaining");
       try {
-        const data = await callSolveApi({ kind: "image", file: imageFile, mode: "full" });
+        const data = await callSolveApi({ kind: "image", file: fileToSend, mode: "full" });
         setResult(data);
+        await persistResult(data, "image", undefined, imageFile);
         setPhase("result");
       } catch (e) {
         setError(e instanceof Error ? e.message : "通信エラー");
@@ -143,7 +192,7 @@ export default function Home() {
 
     setPhase("reading");
     try {
-      const data = await callSolveApi({ kind: "image", file: imageFile, mode: "read" });
+      const data = await callSolveApi({ kind: "image", file: fileToSend, mode: "read" });
       if (isUnreadable(data)) {
         setResult(data);
         setPhase("result");
@@ -157,13 +206,14 @@ export default function Home() {
     }
   }
 
-  /** テキストモード: 「質問する」ボタン */
+  /** テキストモード送信 */
   async function handleTextSubmit(question: string) {
     setError(null);
     setPhase("explaining");
     try {
       const data = await callSolveApi({ kind: "text", question });
       setResult(data);
+      await persistResult(data, "text", question, null);
       setPhase("result");
     } catch (e) {
       setError(e instanceof Error ? e.message : "通信エラー");
@@ -173,7 +223,8 @@ export default function Home() {
 
   /** 確認モーダル: 「合ってる」 → 解説生成 */
   async function handleConfirmRead(skipNext: boolean) {
-    if (!imageFile || !readingResult) return;
+    const fileToSend = submitFile ?? imageFile;
+    if (!fileToSend || !readingResult) return;
     if (skipNext && !settings.skipReadConfirm) {
       const next = { ...settings, skipReadConfirm: true };
       setSettings(next);
@@ -182,8 +233,9 @@ export default function Home() {
     setError(null);
     setPhase("explaining");
     try {
-      const data = await callSolveApi({ kind: "image", file: imageFile, mode: "full" });
+      const data = await callSolveApi({ kind: "image", file: fileToSend, mode: "full" });
       setResult(data);
+      await persistResult(data, "image", undefined, imageFile);
       setReadingResult(null);
       setPhase("result");
     } catch (e) {
@@ -195,6 +247,55 @@ export default function Home() {
   function handleRetake() {
     setReadingResult(null);
     setPhase("input");
+  }
+
+  /** 履歴から問題を復元 */
+  function handleSelectHistory(entry: HistoryEntry) {
+    setHistoryOpen(false);
+    setImageFile(null);
+    setSubmitFile(null);
+    setReadingResult(null);
+    setError(null);
+    setActiveEntry(entry);
+    setResult(entry.problems);
+    setInputMode(entry.inputKind);
+    setPhase("result");
+  }
+
+  /** 追加質問送信 */
+  async function handleFollowUp(question: string): Promise<string> {
+    if (!result) throw new Error("解説が表示されていません");
+    const history = (activeEntry?.followUps ?? []).map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+    const data = await callSolveApi({
+      kind: "followup",
+      question,
+      context: result,
+      history,
+    });
+    const answer = data[0]?.answer || data[0]?.steps || data[0]?.approach || "";
+    if (activeEntry) {
+      const userMsg = { role: "user" as const, content: question, timestamp: Date.now() };
+      const assistantMsg = { role: "assistant" as const, content: answer, timestamp: Date.now() };
+      appendFollowUp(activeEntry.id, userMsg);
+      appendFollowUp(activeEntry.id, assistantMsg);
+      setActiveEntry({
+        ...activeEntry,
+        followUps: [...(activeEntry.followUps ?? []), userMsg, assistantMsg],
+      });
+      setHistoryRefreshKey((k) => k + 1);
+    }
+    return answer;
+  }
+
+  /** フィードバック保存 */
+  function handleFeedback(value: "good" | "wrong" | "alternative") {
+    if (!activeEntry) return;
+    saveFeedback(activeEntry.id, value);
+    setActiveEntry({ ...activeEntry, feedback: value });
+    setHistoryRefreshKey((k) => k + 1);
   }
 
   useEffect(() => {
@@ -209,10 +310,15 @@ export default function Home() {
   const isResultUnreadable = showResult && result && isUnreadable(result);
   const isLoading = phase === "reading" || phase === "explaining";
   const isInputPhase = phase === "input";
+  const displayImageSrc =
+    activeEntry?.thumbnail ?? (inputMode === "image" ? previewUrl : null);
 
   return (
     <>
-      <Header onOpenSettings={() => setShowProfile(true)} />
+      <Header
+        onOpenHistory={() => setHistoryOpen(true)}
+        onOpenSettings={() => setShowProfile(true)}
+      />
 
       <main className="flex-1 max-w-3xl w-full mx-auto px-3 sm:px-4 py-4 sm:py-6 pb-action-bar space-y-4 sm:space-y-5">
         <SettingsBar settings={settings} onEdit={() => setShowProfile(true)} />
@@ -269,12 +375,15 @@ export default function Home() {
           <ResultDisplay
             ref={resultRef}
             results={result}
-            imageSrc={inputMode === "image" ? previewUrl : null}
+            imageSrc={displayImageSrc}
+            followUps={activeEntry?.followUps}
+            onFollowUp={handleFollowUp}
+            onFeedback={handleFeedback}
+            currentFeedback={activeEntry?.feedback}
           />
         )}
       </main>
 
-      {/* 結果表示中の固定下部アクションバー（safe-area対応） */}
       {showResult && !isResultUnreadable && (
         <div
           className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 px-3 pt-3"
@@ -309,6 +418,13 @@ export default function Home() {
           onRetake={handleRetake}
         />
       )}
+
+      <HistoryDrawer
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onSelect={handleSelectHistory}
+        refreshKey={historyRefreshKey}
+      />
 
       {error && <ErrorToast message={error} onClose={() => setError(null)} />}
     </>

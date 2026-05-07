@@ -23,6 +23,33 @@ export type ApiResponse =
 
 export const UNREADABLE_MARKER = "数学の問題が認識できませんでした";
 
+export type FeedbackValue = "good" | "wrong" | "alternative";
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+export type InputKind = "image" | "text";
+
+export interface HistoryEntry {
+  id: string;
+  createdAt: number;
+  inputKind: InputKind;
+  /** テキストモード時の入力 */
+  question?: string;
+  /** 画像モード時の縮小サムネ (data URL, 最大240px) */
+  thumbnail?: string;
+  problems: SolutionResult[];
+  grade: Grade;
+  verbosity: Verbosity;
+  feedback?: FeedbackValue;
+  followUps?: ChatMessage[];
+  /** カテゴリ（自動推定: 一次方程式、微分、図形 など） */
+  category?: string;
+}
+
 export const GRADE_LABEL: Record<Grade, string> = {
   junior: "中学生",
   high: "高校生",

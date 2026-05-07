@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { buildPrompt, buildReadOnlyPrompt, buildTextPrompt } from "@/lib/prompt";
+import {
+  buildFollowUpPrompt,
+  buildPrompt,
+  buildReadOnlyPrompt,
+  buildTextPrompt,
+} from "@/lib/prompt";
 import { ApiResponse, Grade, Verbosity, SolutionResult } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -12,7 +17,7 @@ const MAX_QUESTION_LENGTH = 2000;
 const VALID_GRADES: Grade[] = ["junior", "high", "university", "other"];
 const VALID_VERBOSITIES: Verbosity[] = ["brief", "standard", "detailed"];
 
-type Mode = "read" | "full" | "text";
+type Mode = "read" | "full" | "text" | "followup";
 
 function bad(error: string, status = 400): NextResponse<ApiResponse> {
   return NextResponse.json({ ok: false, error }, { status });
@@ -34,10 +39,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
   const grade = formData.get("grade") as string | null;
   const verbosity = formData.get("verbosity") as string | null;
   const modeParam = formData.get("mode") as string | null;
+  const contextRaw = formData.get("context") as string | null;
+  const historyRaw = formData.get("history") as string | null;
 
-  // モード判定: questionがあればtext、imageがあれば read or full
+  // モード判定
   let mode: Mode;
-  if (question && question.trim().length > 0) {
+  if (modeParam === "followup") {
+    mode = "followup";
+  } else if (question && question.trim().length > 0) {
     mode = "text";
   } else if (modeParam === "read") {
     mode = "read";
@@ -46,7 +55,18 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
   }
 
   // 入力バリデーション（モード別）
-  if (mode === "text") {
+  if (mode === "followup") {
+    if (!question || question.trim().length === 0) {
+      return bad("追加質問が空です");
+    }
+    if (question.length > MAX_QUESTION_LENGTH) {
+      return bad(`質問が長すぎます（${MAX_QUESTION_LENGTH}文字以内）`);
+    }
+    if (!grade || !VALID_GRADES.includes(grade as Grade)) return bad("学年指定が不正です");
+    if (!verbosity || !VALID_VERBOSITIES.includes(verbosity as Verbosity)) {
+      return bad("詳しさ指定が不正です");
+    }
+  } else if (mode === "text") {
     if (!question || question.trim().length === 0) {
       return bad("質問が空です");
     }
@@ -71,9 +91,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     }
   }
 
-  // 画像をbase64化（テキストモードならスキップ）
+  // 画像をbase64化（text/followupモードはスキップ）
   let imagePart: { inlineData: { mimeType: string; data: string } } | null = null;
-  if (mode !== "text" && image instanceof File) {
+  if (mode !== "text" && mode !== "followup" && image instanceof File) {
     try {
       const buf = Buffer.from(await image.arrayBuffer());
       imagePart = {
@@ -93,6 +113,41 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     prompt = buildReadOnlyPrompt();
   } else if (mode === "text") {
     prompt = buildTextPrompt(
+      question!.trim(),
+      grade as Grade,
+      verbosity as Verbosity
+    );
+  } else if (mode === "followup") {
+    // 元の解説を文字列化
+    let contextStr = "";
+    try {
+      const parsedCtx = contextRaw ? JSON.parse(contextRaw) : null;
+      if (Array.isArray(parsedCtx)) {
+        contextStr = parsedCtx
+          .map((p: SolutionResult, i: number) => {
+            const heading = parsedCtx.length > 1 ? `### 問題${i + 1}\n` : "";
+            return `${heading}問題: ${p.problemReading}\n考え方: ${p.approach}\n解き方: ${p.steps}\n答え: ${p.answer}`;
+          })
+          .join("\n\n");
+      }
+    } catch {
+      contextStr = "";
+    }
+    let chatHistory: Array<{ role: string; content: string }> = [];
+    try {
+      const parsedHist = historyRaw ? JSON.parse(historyRaw) : null;
+      if (Array.isArray(parsedHist)) {
+        chatHistory = parsedHist
+          .filter((m) => m && typeof m.role === "string" && typeof m.content === "string")
+          .map((m) => ({ role: String(m.role), content: String(m.content) }))
+          .slice(-10); // 直近10件まで
+      }
+    } catch {
+      chatHistory = [];
+    }
+    prompt = buildFollowUpPrompt(
+      contextStr,
+      chatHistory,
       question!.trim(),
       grade as Grade,
       verbosity as Verbosity

@@ -16,6 +16,7 @@ import { ShareButton } from "@/components/ShareButton";
 import { UnreadableState } from "@/components/UnreadableState";
 import { ErrorToast } from "@/components/ErrorToast";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
+import { OnboardingHints } from "@/components/OnboardingHints";
 import {
   ApiResponse,
   HistoryEntry,
@@ -425,6 +426,9 @@ export default function Home() {
         onSelect={handleSelectHistory}
         refreshKey={historyRefreshKey}
       />
+
+      {/* プロフィール設定が完了済みのときにオンボーディングヒントを表示 */}
+      <OnboardingHints enabled={settings.isProfileSet && !showProfile} />
 
       {error && <ErrorToast message={error} onClose={() => setError(null)} />}
     </>

@@ -46,6 +46,17 @@ export function ProfileModal({ initial, isFirstTime, onSave, onClose }: Props) {
               : "解説のスタイルを変更できます"}
           </p>
 
+          {isFirstTime && (
+            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900">
+              <div className="font-semibold mb-1">📚 学びのヒント</div>
+              <p className="text-xs leading-relaxed">
+                MathLensは「答え」ではなく「考え方」を理解するためのツールです。
+                解説を写すだけでなく、なぜそうなるかを意識しよう。
+                AIの解説は完璧ではないので、教科書や先生にも確認してね。
+              </p>
+            </div>
+          )}
+
           <div className="mt-6 space-y-5">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">学年</label>

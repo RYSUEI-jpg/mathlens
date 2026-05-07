@@ -14,15 +14,21 @@ export function ErrorToast({ message, onClose }: Props) {
   }, [onClose]);
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)]">
+    <div
+      role="alert"
+      className="fixed left-1/2 -translate-x-1/2 z-[60] max-w-md w-[calc(100%-1.5rem)]"
+      style={{
+        bottom: "calc(96px + max(env(safe-area-inset-bottom), 12px))",
+      }}
+    >
       <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl shadow-lg flex items-start gap-3">
-        <span className="text-xl">⚠️</span>
-        <div className="flex-1 text-sm">{message}</div>
+        <span className="text-xl flex-shrink-0">⚠️</span>
+        <div className="flex-1 text-sm leading-relaxed">{message}</div>
         <button
           type="button"
           onClick={onClose}
           aria-label="閉じる"
-          className="text-red-400 hover:text-red-600"
+          className="-mr-2 -my-1 w-10 h-10 flex items-center justify-center text-red-400 active:text-red-600 active:bg-red-100 rounded-lg flex-shrink-0"
         >
           ✕
         </button>

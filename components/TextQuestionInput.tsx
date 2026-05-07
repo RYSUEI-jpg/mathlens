@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Props {
   onSubmit: (question: string) => void;
@@ -17,8 +17,18 @@ const MAX_LENGTH = 2000;
 
 export function TextQuestionInput({ onSubmit }: Props) {
   const [text, setText] = useState("");
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const trimmed = text.trim();
   const remaining = MAX_LENGTH - text.length;
+
+  // PCのみ自動フォーカス（モバイルだとキーボード即出現で逆に邪魔）
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+    if (!isCoarsePointer) {
+      taRef.current?.focus();
+    }
+  }, []);
 
   function handleSubmit() {
     if (!trimmed) return;
@@ -26,7 +36,6 @@ export function TextQuestionInput({ onSubmit }: Props) {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Ctrl/Cmd + Enter で送信
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       handleSubmit();
@@ -37,13 +46,16 @@ export function TextQuestionInput({ onSubmit }: Props) {
     <div className="space-y-3">
       <div>
         <textarea
+          ref={taRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           maxLength={MAX_LENGTH}
           placeholder="解きたい問題、または知りたい概念を入力してください..."
-          className="w-full min-h-32 max-h-64 p-3 rounded-xl border-2 border-slate-200 focus:border-indigo-400 focus:outline-none resize-y text-base"
+          enterKeyHint="send"
+          className="w-full min-h-32 max-h-64 p-3 rounded-xl border-2 border-slate-200 focus:border-indigo-400 focus:outline-none resize-y text-base leading-relaxed"
           rows={4}
+          style={{ scrollMarginBottom: "120px" }}
         />
         <div className="text-right text-xs text-slate-400 mt-1">
           {remaining}文字
@@ -59,7 +71,7 @@ export function TextQuestionInput({ onSubmit }: Props) {
                 key={ex}
                 type="button"
                 onClick={() => setText(ex)}
-                className="text-xs px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 transition"
+                className="text-sm min-h-10 px-3 py-2 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 active:bg-indigo-100 transition"
               >
                 {ex}
               </button>
@@ -72,11 +84,11 @@ export function TextQuestionInput({ onSubmit }: Props) {
         type="button"
         onClick={handleSubmit}
         disabled={!trimmed}
-        className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg shadow-lg hover:shadow-xl active:scale-[0.99] transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-lg flex items-center justify-center gap-2"
+        className="w-full min-h-14 py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg shadow-lg active:scale-[0.99] transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         🚀 質問する
       </button>
-      <p className="text-xs text-slate-400 text-center">
+      <p className="hidden sm:block text-xs text-slate-400 text-center">
         Ctrl/⌘ + Enter で送信
       </p>
     </div>

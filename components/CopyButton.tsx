@@ -16,7 +16,6 @@ export function CopyButton({ text, label = "答えをコピー" }: Props) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      // fallback - select & prompt
       console.error("Clipboard API failed");
     }
   }
@@ -25,7 +24,7 @@ export function CopyButton({ text, label = "答えをコピー" }: Props) {
     <button
       type="button"
       onClick={handleCopy}
-      className="text-xs px-2 py-1 rounded-md bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition flex items-center gap-1"
+      className="text-sm min-h-10 px-3 py-2 rounded-lg bg-white border border-emerald-300 text-emerald-700 active:bg-emerald-50 transition flex items-center gap-1.5"
       aria-label={label}
     >
       {copied ? (

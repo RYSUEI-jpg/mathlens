@@ -76,8 +76,9 @@ function PhotoThumbnail({ src }: { src: string }) {
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            className="absolute top-4 right-4 text-white text-3xl"
+            className="absolute top-3 right-3 w-12 h-12 flex items-center justify-center text-white text-2xl rounded-full bg-black/40 active:bg-black/60"
             aria-label="閉じる"
+            style={{ marginTop: "env(safe-area-inset-top)" }}
           >
             ✕
           </button>
@@ -99,14 +100,18 @@ function PaginationBar({
   onNext: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2">
+    <div
+      className="sticky z-20 flex items-center justify-between bg-indigo-50/95 backdrop-blur border border-indigo-200 rounded-xl px-2 py-1.5 shadow-sm"
+      style={{ top: "calc(56px + env(safe-area-inset-top))" }}
+    >
       <button
         type="button"
         onClick={onPrev}
         disabled={current === 0}
-        className="px-3 py-1.5 rounded-lg text-sm font-medium text-indigo-700 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+        aria-label="前の問題"
+        className="min-w-12 min-h-12 px-3 rounded-lg text-sm font-medium text-indigo-700 active:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center justify-center"
       >
-        ← 前の問題
+        ←
       </button>
       <span className="text-sm font-bold text-indigo-900">
         問題 {current + 1} / {total}
@@ -115,9 +120,10 @@ function PaginationBar({
         type="button"
         onClick={onNext}
         disabled={current === total - 1}
-        className="px-3 py-1.5 rounded-lg text-sm font-medium text-indigo-700 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+        aria-label="次の問題"
+        className="min-w-12 min-h-12 px-3 rounded-lg text-sm font-medium text-indigo-700 active:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center justify-center"
       >
-        次の問題 →
+        →
       </button>
     </div>
   );

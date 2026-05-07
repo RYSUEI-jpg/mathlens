@@ -214,7 +214,7 @@ export default function Home() {
     <>
       <Header onOpenSettings={() => setShowProfile(true)} />
 
-      <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-6 pb-28 space-y-5">
+      <main className="flex-1 max-w-3xl w-full mx-auto px-3 sm:px-4 py-4 sm:py-6 pb-action-bar space-y-4 sm:space-y-5">
         <SettingsBar settings={settings} onEdit={() => setShowProfile(true)} />
 
         {isInputPhase && (
@@ -274,15 +274,18 @@ export default function Home() {
         )}
       </main>
 
-      {/* 結果表示中の固定下部アクションバー */}
+      {/* 結果表示中の固定下部アクションバー（safe-area対応） */}
       {showResult && !isResultUnreadable && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 p-3">
-          <div className="max-w-3xl mx-auto flex flex-wrap justify-center gap-2">
+        <div
+          className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 px-3 pt-3"
+          style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
+        >
+          <div className="max-w-3xl mx-auto flex justify-center gap-2">
             <ShareButton targetRef={resultRef} />
             <button
               type="button"
               onClick={handleReset}
-              className="px-5 py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition flex items-center gap-2"
+              className="flex-1 sm:flex-none min-h-12 px-5 py-3 rounded-xl bg-indigo-600 text-white font-semibold active:bg-indigo-700 transition flex items-center justify-center gap-2"
             >
               🔄 別の質問をする
             </button>

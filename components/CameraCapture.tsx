@@ -86,16 +86,24 @@ export function CameraCapture({ onCapture, onCancel }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      <div className="flex items-center justify-between p-3 text-white">
+      <div
+        className="flex items-center justify-between px-2 text-white"
+        style={{
+          paddingTop: "max(env(safe-area-inset-top), 12px)",
+          paddingBottom: "8px",
+        }}
+      >
         <button
           type="button"
           onClick={onCancel}
-          className="px-3 py-2 rounded-lg hover:bg-white/10"
+          aria-label="カメラを閉じる"
+          className="min-w-12 min-h-12 px-3 rounded-lg active:bg-white/10 flex items-center gap-1"
         >
-          ← 閉じる
+          <span className="text-xl">←</span>
+          <span className="text-sm">閉じる</span>
         </button>
         <span className="text-sm opacity-70">カメラで撮影</span>
-        <span className="w-16" />
+        <span className="w-12" />
       </div>
 
       <div className="flex-1 flex items-center justify-center relative overflow-hidden">
@@ -134,13 +142,19 @@ export function CameraCapture({ onCapture, onCancel }: Props) {
       </div>
 
       {!error && (
-        <div className="bg-black/90 py-6 flex items-center justify-center">
+        <div
+          className="bg-black/90 flex items-center justify-center"
+          style={{
+            paddingTop: "20px",
+            paddingBottom: "max(env(safe-area-inset-bottom), 20px)",
+          }}
+        >
           <button
             type="button"
             onClick={handleCapture}
             disabled={!ready}
             aria-label="撮影"
-            className="w-20 h-20 rounded-full bg-white border-4 border-slate-300 active:scale-95 transition disabled:opacity-40 flex items-center justify-center"
+            className="w-20 h-20 rounded-full bg-white border-4 border-slate-300 active:scale-95 transition disabled:opacity-40 flex items-center justify-center shadow-lg"
           >
             <span className="w-16 h-16 rounded-full bg-white border-2 border-black/20" />
           </button>

@@ -19,9 +19,9 @@ export function ImagePreview({ src, onReset }: Props) {
       <button
         type="button"
         onClick={onReset}
-        className="text-sm text-slate-500 hover:text-indigo-600 underline"
+        className="min-h-10 px-3 -ml-1 text-sm text-slate-600 active:text-indigo-700 active:bg-slate-100 rounded-lg transition"
       >
-        画像を選び直す
+        ↩ 画像を選び直す
       </button>
     </div>
   );

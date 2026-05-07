@@ -276,7 +276,11 @@ export default function Home() {
       context: result,
       history,
     });
-    const answer = data[0]?.answer || data[0]?.steps || data[0]?.approach || "";
+    // followupは形式が緩いので、いずれかの非空フィールドを採用
+    const first = data[0];
+    const answer =
+      [first?.problemReading, first?.approach, first?.steps, first?.answer]
+        .find((s) => s && s.trim().length > 0) ?? "";
     if (activeEntry) {
       const userMsg = { role: "user" as const, content: question, timestamp: Date.now() };
       const assistantMsg = { role: "assistant" as const, content: answer, timestamp: Date.now() };

@@ -32,9 +32,12 @@ export function FollowUpChat({ messages, onSend }: Props) {
     setBusy(true);
     try {
       const answer = await onSend(trimmed);
+      const finalAnswer = answer.trim()
+        ? answer
+        : "（応答が空でした。もう一度お試しください）";
       setLocalMessages((prev) => [
         ...prev,
-        { role: "assistant", content: answer, timestamp: Date.now() },
+        { role: "assistant", content: finalAnswer, timestamp: Date.now() },
       ]);
     } catch (e) {
       setLocalMessages((prev) => [

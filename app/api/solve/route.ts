@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { buildPrompt, buildReadOnlyPrompt } from "@/lib/prompt";
+import { buildPrompt, buildReadOnlyPrompt, buildTextPrompt } from "@/lib/prompt";
 import { ApiResponse, Grade, Verbosity, SolutionResult } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const MAX_IMAGE_BYTES = 7 * 1024 * 1024; // Gemini inline limit safety margin
+const MAX_QUESTION_LENGTH = 2000;
 
 const VALID_GRADES: Grade[] = ["junior", "high", "university", "other"];
 const VALID_VERBOSITIES: Verbosity[] = ["brief", "standard", "detailed"];
+
+type Mode = "read" | "full" | "text";
 
 function bad(error: string, status = 400): NextResponse<ApiResponse> {
   return NextResponse.json({ ok: false, error }, { status });
@@ -27,37 +30,77 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
   }
 
   const image = formData.get("image");
+  const question = formData.get("question") as string | null;
   const grade = formData.get("grade") as string | null;
   const verbosity = formData.get("verbosity") as string | null;
-  const mode = formData.get("mode") as string | null; // "read" or "full" (default)
-  const isReadOnly = mode === "read";
+  const modeParam = formData.get("mode") as string | null;
 
-  if (!(image instanceof File)) return bad("画像が含まれていません");
-  if (image.size === 0) return bad("画像が空です");
-  if (image.size > MAX_IMAGE_BYTES) {
-    return bad(`画像サイズが大きすぎます（${(image.size / 1024 / 1024).toFixed(1)}MB / 上限7MB）`);
+  // モード判定: questionがあればtext、imageがあれば read or full
+  let mode: Mode;
+  if (question && question.trim().length > 0) {
+    mode = "text";
+  } else if (modeParam === "read") {
+    mode = "read";
+  } else {
+    mode = "full";
   }
-  // mode=read のときは grade/verbosity 不要
-  if (!isReadOnly) {
+
+  // 入力バリデーション（モード別）
+  if (mode === "text") {
+    if (!question || question.trim().length === 0) {
+      return bad("質問が空です");
+    }
+    if (question.length > MAX_QUESTION_LENGTH) {
+      return bad(`質問が長すぎます（${MAX_QUESTION_LENGTH}文字以内）`);
+    }
     if (!grade || !VALID_GRADES.includes(grade as Grade)) return bad("学年指定が不正です");
     if (!verbosity || !VALID_VERBOSITIES.includes(verbosity as Verbosity)) {
       return bad("詳しさ指定が不正です");
     }
+  } else {
+    if (!(image instanceof File)) return bad("画像が含まれていません");
+    if (image.size === 0) return bad("画像が空です");
+    if (image.size > MAX_IMAGE_BYTES) {
+      return bad(`画像サイズが大きすぎます（${(image.size / 1024 / 1024).toFixed(1)}MB / 上限7MB）`);
+    }
+    if (mode === "full") {
+      if (!grade || !VALID_GRADES.includes(grade as Grade)) return bad("学年指定が不正です");
+      if (!verbosity || !VALID_VERBOSITIES.includes(verbosity as Verbosity)) {
+        return bad("詳しさ指定が不正です");
+      }
+    }
   }
 
-  let base64: string;
-  let mimeType: string;
-  try {
-    const buf = Buffer.from(await image.arrayBuffer());
-    base64 = buf.toString("base64");
-    mimeType = image.type || "image/jpeg";
-  } catch {
-    return bad("画像の処理に失敗しました", 500);
+  // 画像をbase64化（テキストモードならスキップ）
+  let imagePart: { inlineData: { mimeType: string; data: string } } | null = null;
+  if (mode !== "text" && image instanceof File) {
+    try {
+      const buf = Buffer.from(await image.arrayBuffer());
+      imagePart = {
+        inlineData: {
+          mimeType: image.type || "image/jpeg",
+          data: buf.toString("base64"),
+        },
+      };
+    } catch {
+      return bad("画像の処理に失敗しました", 500);
+    }
   }
 
-  const prompt = isReadOnly
-    ? buildReadOnlyPrompt()
-    : buildPrompt(grade as Grade, verbosity as Verbosity);
+  // プロンプト選択
+  let prompt: string;
+  if (mode === "read") {
+    prompt = buildReadOnlyPrompt();
+  } else if (mode === "text") {
+    prompt = buildTextPrompt(
+      question!.trim(),
+      grade as Grade,
+      verbosity as Verbosity
+    );
+  } else {
+    prompt = buildPrompt(grade as Grade, verbosity as Verbosity);
+  }
+
   const ai = new GoogleGenAI({ apiKey });
 
   // 503 (UNAVAILABLE) と 429 (RESOURCE_EXHAUSTED) は一時的な混雑なのでリトライ
@@ -72,6 +115,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
   const MAX_RETRIES = 2;
   const BACKOFF_MS = [1500, 4000]; // 1.5s, 4s
 
+  // contentsを動的に組み立て（テキストモードでは画像なし）
+  const contents = imagePart
+    ? [imagePart, { text: prompt }]
+    : [{ text: prompt }];
+
   let rawText = "";
   let lastError: unknown = null;
 
@@ -79,10 +127,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     try {
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: [
-          { inlineData: { mimeType, data: base64 } },
-          { text: prompt },
-        ],
+        contents,
         config: {
           responseMimeType: "application/json",
           temperature: 0.2,
@@ -112,7 +157,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
       return bad("AIへのアクセスが拒否されました（管理者にご連絡ください）", 502);
     }
     if (msg.includes("INVALID_ARGUMENT") || msg.includes("400")) {
-      return bad("画像をAIが処理できませんでした。別の画像でお試しください。", 400);
+      return bad("入力をAIが処理できませんでした。内容を変えてお試しください。", 400);
     }
     return bad(`AI呼び出しに失敗しました: ${msg}`, 502);
   }

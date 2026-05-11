@@ -1,6 +1,109 @@
 import { Grade, Verbosity, GRADE_LABEL } from "./types";
 
 /**
+ * 「今日の数学」用プロンプト。
+ * 興味を引く読み物として、短く・面白く・身近に語る。
+ */
+export function buildDailyTopicPrompt(
+  title: string,
+  hook: string,
+  grade: Grade
+): string {
+  return `あなたは数学の魅力を語るのが得意な人気YouTuberです。${GRADE_LABEL[grade]}が読んで「数学ってこんなに面白いんだ！」と思える短い読み物を書いてください。
+
+# トピック
+タイトル: ${title}
+切り口: ${hook}
+
+# 書き方
+- マークダウン記法OK。数式は $...$ または $$...$$ のLaTeX
+- **600〜900文字程度**で短く、テンポよく
+- 構成例: つかみの問いかけ → 意外な事実 → 数学的説明 → 日常との繋がり → 「もっと知りたい」で終わる
+- 専門用語は最小限、使う場合は1行で説明
+- 「！」「？」「実は」「びっくり」など感情を動かす言葉を活用
+- 最後に関連する短い問題やクイズを1問添えると◎
+- 前置きや「今日のテーマは」のような事務的導入は省略`;
+}
+
+/**
+ * 「興味から数学へ」プロンプト。
+ * ユーザーの興味分野×数学の話題を1つ生成。
+ */
+export function buildInterestExplorePrompt(
+  interest: string,
+  grade: Grade
+): string {
+  return `あなたは数学を様々な分野と結びつけて語るのが得意な先生です。
+ユーザーが好きな分野「${interest}」の中に潜む数学を、${GRADE_LABEL[grade]}向けに紹介してください。
+
+# 書き方
+- マークダウン記法OK、数式は $...$ や $$...$$ のLaTeX
+- **500〜800文字程度**
+- 構成: 「${interest}と数学？」「実はこんなところに」「数学的に説明すると」「だから何が起きるか」
+- 具体例を必ず1つ以上挙げる
+- ${interest}に興味がある人が「えっそうなの！？」と驚く切り口を選ぶ
+- 数学嫌いを意識しない、楽しさ最優先`;
+}
+
+/**
+ * 「数学雑談」プロンプト。
+ * 自由質問に対する友達みたいな対話。
+ */
+export function buildMathChatPrompt(
+  question: string,
+  history: Array<{ role: string; content: string }>,
+  grade: Grade
+): string {
+  const historyBlock = history
+    .slice(-6)
+    .map((m) => `${m.role === "user" ? "ユーザー" : "AI"}: ${m.content}`)
+    .join("\n");
+  return `あなたは数学好きの友達です。難しい質問でも噛み砕いて答えます。
+
+${historyBlock ? `# これまでの会話\n"""\n${historyBlock}\n"""\n\n` : ""}# 質問
+"""
+${question}
+"""
+
+# 答え方
+- ${GRADE_LABEL[grade]}向けに、フレンドリーで簡潔に
+- マークダウンOK、数式は $...$ のLaTeX
+- 短く（200〜400字程度）
+- 質問が数学と関係ない場合は「数学に関する質問にお答えします」と短く返す
+- 「答え→なぜ→例」の順で答えると分かりやすい`;
+}
+
+/**
+ * 「撮って発見」用の画像プロンプト。
+ * 通常の問題解決ではなく、写ったものに含まれる数学的視点を発見させる。
+ */
+export function buildDiscoverImagePrompt(grade: Grade): string {
+  return `あなたは身の回りのものに隠れた数学を発見する達人です。画像に写っているものから、${GRADE_LABEL[grade]}が「えっこんなところに数学が！」と驚く数学的視点を見つけてください。
+
+# 出力フォーマット
+必ず以下のJSON構造のみで回答してください:
+
+{
+  "problems": [
+    {
+      "problemReading": "📸 写っているもの（1行で何が写っているか）",
+      "approach": "🔍 隠れた数学（どんな数学が関係しているかを200字程度で）",
+      "steps": "📖 もう少し詳しく（具体的な公式・原理を例つきで300字程度、マークダウン可・数式はLaTeX）",
+      "answer": "💡 これで何が分かる？（実生活で役立つ視点を100字程度）",
+      "diagram": "<svg>...</svg>"
+    }
+  ]
+}
+
+# ルール
+- 必ず1要素の配列で返す
+- 画像が抽象的・判別不能な場合でも、形状・色・配置から数学的視点を1つ見つける
+- 数学とまったく結びつかない場合のみ: { "problems": [{ "problemReading": "この画像からは数学的な視点を見つけられませんでした", "approach": "別の身近なもの（時計、植物、建築、食べ物など）を撮ってみてね", "steps": "", "answer": "", "diagram": "" }] }
+- diagramは図解が役立つ場合のみSVG（viewBox必須、scriptタグ禁止、関数グラフは transform="scale(s,-s)" でy軸反転）
+- 「教科書的」ではなく「面白い豆知識」のトーンで`;
+}
+
+/**
  * 読み取りだけを行う軽量プロンプト。
  * 解説確認モーダルを表示する場合の最初のステップで使用。
  * 解説生成しないので速く、APIコストも安い。

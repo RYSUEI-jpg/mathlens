@@ -17,6 +17,8 @@ import { UnreadableState } from "@/components/UnreadableState";
 import { ErrorToast } from "@/components/ErrorToast";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
 import { OnboardingHints } from "@/components/OnboardingHints";
+import { TopTabs, AppTab } from "@/components/TopTabs";
+import { DiscoverView } from "@/components/DiscoverView";
 import {
   ApiResponse,
   HistoryEntry,
@@ -55,6 +57,7 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
+  const [appTab, setAppTab] = useState<AppTab>("solve");
   const [inputMode, setInputMode] = useState<InputMode>("image");
   const [phase, setPhase] = useState<Phase>("input");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -352,11 +355,15 @@ export default function Home() {
       <main className="flex-1 max-w-3xl w-full mx-auto px-3 sm:px-4 py-4 sm:py-6 pb-action-bar space-y-4 sm:space-y-5">
         <SettingsBar settings={settings} onEdit={() => setShowProfile(true)} />
 
-        {isInputPhase && (
+        <TopTabs tab={appTab} onChange={setAppTab} />
+
+        {appTab === "discover" && <DiscoverView grade={settings.grade} />}
+
+        {appTab === "solve" && isInputPhase && (
           <InputTabs mode={inputMode} onChange={handleModeChange} />
         )}
 
-        {isInputPhase && inputMode === "image" && !previewUrl && (
+        {appTab === "solve" && isInputPhase && inputMode === "image" && !previewUrl && (
           <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
             <h2 className="text-base font-semibold text-slate-800 mb-3">
               📸 数学の問題を読み込もう
@@ -365,7 +372,7 @@ export default function Home() {
           </section>
         )}
 
-        {isInputPhase && inputMode === "image" && previewUrl && (
+        {appTab === "solve" && isInputPhase && inputMode === "image" && previewUrl && (
           <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
             <h2 className="text-base font-semibold text-slate-800">
               ✓ この問題でいい？
@@ -375,7 +382,7 @@ export default function Home() {
           </section>
         )}
 
-        {isInputPhase && inputMode === "text" && (
+        {appTab === "solve" && isInputPhase && inputMode === "text" && (
           <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
             <h2 className="text-base font-semibold text-slate-800 mb-3">
               ✏️ 質問を入力してください
@@ -384,7 +391,7 @@ export default function Home() {
           </section>
         )}
 
-        {isLoading && (
+        {appTab === "solve" && isLoading && (
           <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
             {phase === "reading" ? (
               <LoadingSpinner message={READING_MESSAGE} />
@@ -396,11 +403,11 @@ export default function Home() {
           </section>
         )}
 
-        {showResult && isResultUnreadable && (
+        {appTab === "solve" && showResult && isResultUnreadable && (
           <UnreadableState imageSrc={previewUrl} onRetake={handleReset} />
         )}
 
-        {showResult && !isResultUnreadable && result && (
+        {appTab === "solve" && showResult && !isResultUnreadable && result && (
           <ResultDisplay
             ref={resultRef}
             results={result}
@@ -413,7 +420,7 @@ export default function Home() {
         )}
       </main>
 
-      {showResult && !isResultUnreadable && (
+      {appTab === "solve" && showResult && !isResultUnreadable && (
         <div
           className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 px-3 pt-3"
           style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}
@@ -440,7 +447,7 @@ export default function Home() {
         />
       )}
 
-      {phase === "confirm" && readingResult && (
+      {appTab === "solve" && phase === "confirm" && readingResult && (
         <ConfirmReadModal
           problems={readingResult}
           onConfirm={handleConfirmRead}
